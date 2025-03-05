@@ -1,4 +1,4 @@
-using Hangfire;
+ï»¿using Hangfire;
 using Hangfire.Mongo;
 using Hangfire.Mongo.Migration.Strategies.Backup;
 using Hangfire.Mongo.Migration.Strategies;
@@ -7,13 +7,18 @@ using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 using WebApplication2.AppDataContext;
 using WebApplication2.Service;
-using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Hosting.Builder;
+using WebApplication2.Configuration;
+using HangfireBasicAuthenticationFilter;
 
 var builder = WebApplication.CreateBuilder(args);
 
+
+builder.Services.Configure<SystemJobSettings>(builder.Configuration.GetSection(nameof(SystemJobSettings)));
+// L?y chu?i k?t n?i t? appsettings.json
 var connectionString = builder.Configuration.GetConnectionString("MongoDb");
 
-// Thêm Hangfire
+// ThÃªm Hangfire
 builder.Services.AddHangfire(configuration => configuration
     .UseMongoStorage(builder.Configuration.GetConnectionString("MongoDB"),
         "hangfireDb",
@@ -26,32 +31,32 @@ builder.Services.AddHangfire(configuration => configuration
             }
         }));
 
-// Thêm Hangfire Server
+// ThÃªm Hangfire Server
 builder.Services.AddHangfireServer();
 
-// Thêm MongoDB Client
+// ThÃªm MongoDB Client
 builder.Services.AddSingleton<IMongoClient>(new MongoClient(connectionString));
 
-// Thêm AppDbContext và NumberUpdateService
+// ThÃªm AppDbContext vÃ  NumberUpdateService
 builder.Services.AddScoped<AppDbContext>();
-//builder.Services.AddScoped<NumberUpdateService>();
 builder.Services.AddScoped<NumberInitializationService>();
-//builder.Services.AddScoped<ChunkProcessingService>();
+//builder.Services.AddScoped<NumberService>();
+builder.Services.AddScoped<ISystemJobSettings,SystemJobSettings>();
 
-// Thêm Controllers
+//ap
+builder.Services.Configure<SystemJobSettings>(builder.Configuration.GetSection("SystemJobSettings"));
+builder.Services.Configure<ISystemJobSettings>(builder.Configuration.GetSection("SystemJobSettings"));
+//builder.Services.AddScoped<ISystemJobSettings>(provider => provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<SystemJobSettings>>().Value);
+// ThÃªm Controllers
 builder.Services.AddControllers();
 
-// Thêm Swagger/OpenAPI
+// ThÃªm Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-//builder.Services.AddAuthentication("Basic")
-//    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>("Basic", null);
-
-builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// C?u hình HTTP request pipeline
+// C?u hÃ¬nh HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -62,10 +67,24 @@ app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
-// Thêm Hangfire Dashboard
-app.UseHangfireDashboard();
+// ThÃªm Hangfire Dashboard
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] {
+        new HangfireCustomBasicAuthenticationFilter
+        {
+            User = builder.Configuration.GetSection("HangfireSettings:UserName").Value,
+            Pass = builder.Configuration.GetSection("HangfireSettings:Password").Value
+        }
+    }
+});
 
+// ThÃªm Hangfire Server
 app.UseHangfireServer();
 
 app.MapControllers();
+
+// ThÃªm Recurring Job (vÃ­ d?: ch?y m?i phÃºt)
+//RecurringJob.AddOrUpdate<NumberUpdateService>("update-number", service => service.UpdateNumberValue(),cronExpression);
+
 app.Run();
